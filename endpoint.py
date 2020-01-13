@@ -31,9 +31,19 @@ def auth(func):
         req = args[0]
         if len(args) != 1:
             return await exception_custom(req, 400)
-        username = req.cookies.get("uid")
-        if username not in session_login.keys():
+        uid = req.cookies.get("uid")
+        if uid not in session_login.keys():
             return await exception_custom(req, 401)
+        if uid in session_login.keys():
+            # 判断浏览器的环境
+            try:
+                brower_env = req.scope.get("headers")[6][1]
+            except Exception as e:
+                brower_env = b"brower_env_1"
+            brower_hmac_new = hmac_salt("login_session_$", str(brower_env, encoding="utf-8"))
+            brower_hmac_old = session_login.get(uid)
+            if brower_hmac_new != brower_hmac_old:
+                return await exception_custom(req, 405)
         r = await func(*args, **kwargs)
         return r
     return wrap
@@ -69,8 +79,17 @@ async def login_check(req):
 
     if username == "hugo" and password == "boss":
 
-        session_login[hmac_salt("login_session_$", username)] = password
+        try:
+            brower_env = req.scope.get("headers")[6][1]
+        except Exception as e:
+            brower_env = b"brower_env_1"
+        session_login[hmac_salt("login_session_$", username)] = hmac_salt("login_session_$", str(brower_env, encoding="utf-8"))
+
         resp = JSONResponse({"retcode": 0, "stdout": "/"})
+        try:
+            brower_env = req.scope.get("headers")[6][1]
+        except Exception as e:
+            brower_env = b"brower_env_1"
         resp.set_cookie(key="uid", value=hmac_salt("login_session_$", username),
         max_age=60*60*24*7,
         expires=60*60*24*7,)
