@@ -5,57 +5,59 @@ Desc:
 """
 
 import uvicorn
+
+from urls import routes
+
 from starlette.applications import Starlette
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
-
 from starlette.middleware import Middleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 
-from urls import routes
-from utils import BasicAuthBackend
 from utils import on_auth_error
+from utils import exception_401
+from utils import exception_404
+from utils import exception_500
+
+from endpoint import startup
+from endpoint import shutdown
+from utils import CustomAuthBackend
 
 
 middleware = [
   Middleware(TrustedHostMiddleware, allowed_hosts=['*']),
-  #Middleware(AuthenticationMiddleware, backend=BasicAuthBackend(), on_error=on_auth_error)
+  Middleware(SessionMiddleware, secret_key="fdasfasfaffa990"),
+  # Middleware(AuthenticationMiddleware, backend=CustomAuthBackend(), on_error=on_auth_error)
 ]
 
-app = Starlette(routes=routes, middleware=middleware, debug=False)
-app.add_middleware(AuthenticationMiddleware, backend=BasicAuthBackend(), on_error=on_auth_error)
-templates = Jinja2Templates(directory='templates')
+exception_handlers = {
+    401: exception_401,
+    404: exception_404,
+    500: exception_500
+
+}
+
+
+
+app = Starlette(routes=routes,
+                middleware=middleware,
+                exception_handlers=exception_handlers,
+                on_startup=[startup],
+                on_shutdown=[shutdown],
+                debug=False)
 app.mount('/static', StaticFiles(directory='statics'), name='static')
 
-
-@app.route('/error')
-async def error(req):
-    template = "exception.html"
-    context = {"request": req, "code": 500}
-    return templates.TemplateResponse(template, context, status_code=500)
+from starlette.responses import Response
 
 
-@app.exception_handler(401)
-async def not_found_401(req, exc):
-    template = "exception.html"
-    context = {"request": req, "code": 401}
-    return templates.TemplateResponse(template, context, status_code=401)
-
-
-@app.exception_handler(404)
-async def not_found(req, exc):
-    template = "exception.html"
-    context = {"request": req, "code": 404}
-    return templates.TemplateResponse(template, context, status_code=404)
-
-
-@app.exception_handler(500)
-async def server_error(req, exc):
-    template = "exception.html"
-    context = {"request": req, "code": 500}
-    return templates.TemplateResponse(template, context, status_code=500)
-
+@app.route("/test")
+async def app_2(scope, receive, send):
+    assert scope['type'] == 'http'
+    response = Response('Hello, world!')
+    response.set_cookie("hugo", "boss")
+    await response(scope, receive, send)
 
 if __name__ == "__main__":
     uvicorn.run(app, host='0.0.0.0', port=13000)
