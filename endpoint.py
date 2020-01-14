@@ -15,6 +15,7 @@ from utils import hmac_salt
 templates = Jinja2Templates(directory='templates')
 
 session_login = {}
+salt = "login_session_$"
 
 
 async def startup():
@@ -31,19 +32,24 @@ def auth(func):
         req = args[0]
         if len(args) != 1:
             return await exception_custom(req, 400)
-        uid = req.cookies.get("uid")
-        if uid not in session_login.keys():
+        username_hash = req.cookies.get("uid")
+
+        # 判断条件1: username_hash 是否存于session
+        if username_hash not in session_login.keys():
             return await exception_custom(req, 401)
-        if uid in session_login.keys():
-            # 判断浏览器的环境
-            try:
-                brower_env = req.scope.get("headers")[6][1]
-            except Exception as e:
-                brower_env = b"brower_env_1"
-            brower_hmac_new = hmac_salt("login_session_$", str(brower_env, encoding="utf-8"))
-            brower_hmac_old = session_login.get(uid)
-            if brower_hmac_new != brower_hmac_old:
-                return await exception_custom(req, 405)
+
+        # 判断条件2: 浏览器的环境
+        user_agent = "user-agent-default"
+        headers = req.scope.get("headers")
+        if isinstance(headers, (list,)):
+            for k, v in headers:
+                if k == "user-agent":
+                    user_agent = v
+        user_agent_hmac_new = hmac_salt(salt, user_agent)
+        user_agent_hmac_old = session_login.get(username_hash)
+        if user_agent_hmac_new != user_agent_hmac_old:
+            return await exception_custom(req, 405)
+
         r = await func(*args, **kwargs)
         return r
     return wrap
@@ -79,18 +85,21 @@ async def login_check(req):
 
     if username == "hugo" and password == "boss":
 
-        try:
-            brower_env = req.scope.get("headers")[6][1]
-        except Exception as e:
-            brower_env = b"brower_env_1"
-        session_login[hmac_salt("login_session_$", username)] = hmac_salt("login_session_$", str(brower_env, encoding="utf-8"))
+        user_agent = "user-agent-default"
+        headers = req.scope.get("headers")
+        if isinstance(headers, (list,)):
+            for k, v in headers:
+                if k == "user-agent":
+                    user_agent = v
+
+        # session: key=hash(username), value=hash(user-agent, 客户端的浏览器环境)
+        username_hash = hmac_salt(salt, username)
+        session_login[username_hash] = hmac_salt(salt, user_agent)
 
         resp = JSONResponse({"retcode": 0, "stdout": "/"})
-        try:
-            brower_env = req.scope.get("headers")[6][1]
-        except Exception as e:
-            brower_env = b"brower_env_1"
-        resp.set_cookie(key="uid", value=hmac_salt("login_session_$", username),
+
+        # cookies: key=uid, value=hash(username)
+        resp.set_cookie(key="uid", value=username_hash,
         max_age=60*60*24*7,
         expires=60*60*24*7,)
         return resp
