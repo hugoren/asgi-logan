@@ -10,26 +10,20 @@ from urls import routes
 
 from starlette.applications import Starlette
 from starlette.staticfiles import StaticFiles
-from starlette.templating import Jinja2Templates
 from starlette.middleware import Middleware
-from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.middleware.authentication import AuthenticationMiddleware
 
-from utils import on_auth_error
 from utils import exception_401
 from utils import exception_404
 from utils import exception_500
 
 from endpoint import startup
 from endpoint import shutdown
-from utils import CustomAuthBackend
 
 
 middleware = [
   Middleware(TrustedHostMiddleware, allowed_hosts=['*']),
-  Middleware(SessionMiddleware, secret_key="fdasfasfaffa990"),
-  # Middleware(AuthenticationMiddleware, backend=CustomAuthBackend(), on_error=on_auth_error)
+
 ]
 
 exception_handlers = {
@@ -40,7 +34,6 @@ exception_handlers = {
 }
 
 
-
 app = Starlette(routes=routes,
                 middleware=middleware,
                 exception_handlers=exception_handlers,
@@ -49,15 +42,6 @@ app = Starlette(routes=routes,
                 debug=False)
 app.mount('/static', StaticFiles(directory='statics'), name='static')
 
-from starlette.responses import Response
-
-
-@app.route("/test")
-async def app_2(scope, receive, send):
-    assert scope['type'] == 'http'
-    response = Response('Hello, world!')
-    response.set_cookie("hugo", "boss")
-    await response(scope, receive, send)
 
 if __name__ == "__main__":
     uvicorn.run(app, host='0.0.0.0', port=13000)
