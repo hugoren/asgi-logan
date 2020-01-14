@@ -3,50 +3,18 @@ Author: Hugo
 Date: 2020-01-07 14:32
 Desc: 
 """
+import os
+import time
+import hmac
+from hashlib import md5
+from collections import UserDict
+from threading import RLock, Lock
 
-from pydantic import BaseModel
+from starlette.config import Config
 from starlette.templating import Jinja2Templates
 
-from starlette.authentication import (
-        AuthenticationBackend, AuthenticationError,
-        SimpleUser, UnauthenticatedUser,
-         AuthCredentials
-)
-
-
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-
-
-import base64
-import binascii
 
 templates = Jinja2Templates(directory='templates')
-
-
-class CustomAuthBackend(AuthenticationBackend):
-    async def authenticate(self, request):
-        if "Authorization" not in request.headers:
-            return
-
-        auth = request.headers["Authorization"]
-        try:
-            scheme, credentials = auth.split()
-            if scheme.lower() != 'basic':
-                return
-            decoded = base64.b64decode(credentials).decode("ascii")
-        except (ValueError, UnicodeDecodeError, binascii.Error) as exc:
-            raise AuthenticationError('Invalid basic auth credentials')
-
-        username, _, password = decoded.partition(":")
-        # TODO: You'd want to verify the username and password here.
-        print(username, password)
-        return AuthCredentials(["authenticated"]), SimpleUser(username)
-
-
-def on_auth_error(request: Request, exc: Exception):
-    print("401")
-    return JSONResponse({"error": str(exc)}, status_code=401)
 
 
 async def exception_custom(req, exce_info: int):
@@ -73,10 +41,6 @@ async def exception_500(req, exc):
     return templates.TemplateResponse(template, context, status_code=500)
 
 
-import hmac
-from hashlib import md5
-
-
 def md5_salt(salt: str, encryption_data: str) -> str:
     hash_instance = md5(bytes(salt, encoding="utf-8"))
     hash_instance.update(bytes(encryption_data, encoding="utf-8"))
@@ -90,5 +54,71 @@ def hmac_salt(salt: str, encryption_data: str) -> str:
     v = hmac_instance.hexdigest()
     return v
 
+
+class TTL(UserDict):
+    def __init__(self, *args, **kwargs):
+        self._rlock = RLock()
+        self._lock = Lock()
+        super().__init__(*args, **kwargs)
+
+    def __repr__(self):
+        return '<TTLDict:{} {} '.format(id(self), self.data)
+
+    def __expire__(self, key, ttl, now=None):
+        if now is None:
+            now = time.time()
+        with self._rlock:
+            _expire, value = self.data[key]
+            self.data[key] = (now + ttl, value)
+
+    def ttl(self, key: str, now=None):
+        if now is None:
+            now = time.time()
+        with self._rlock:
+            expire, value = self.data.get(key, (None, None))
+            if expire is None:
+                return -1
+            elif expire <= now:
+                del self[key]
+                return -2
+            return expire - now
+
+    def setex(self, key: str, value: str, ttl: int):
+        with self._rlock:
+            expire = time.time() + ttl
+            self.data[key] = (expire, value)
+
+    def __len__(self):
+        with self._rlock:
+            for key in list(self.data.keys()):
+                self.ttl(key)
+            return len(self.data)
+
+    def __iter__(self):
+        with self._rlock:
+            for k in self.data.keys():
+                ttl = self.ttl(k)
+                if ttl != -2:
+                    yield k
+
+    def __setitem__(self, key, value):
+        with self._lock:
+            self.data[key] = (None, value)
+
+    def __delitem__(self, key):
+        with self._lock:
+            del self.data[key]
+
+    def __getitem__(self, key):
+        with self._rlock:
+            self.ttl(key)
+            return self.data[key][1]
+
+
+def config_info(key: str, default_value=None):
+    env = os.getenv("env", "dev")
+    config = Config(".env_{}".format(env))
+    value = config(key, default=default_value)
+    return value
 
 
