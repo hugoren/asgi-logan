@@ -5,6 +5,19 @@
 
 ###功能 
    ##### WEB
-        登陆
-        index
+        -[ ] 登陆
+        -[ ] index
+   ##### 安全性
+       session, cookies HMAC的SALT以及利用cookies本身一些安全属性，如httponly, security等
+       
+       
+        
+###效果
+![login](https://upload-images.jianshu.io/upload_images/1500770-fc8f343707c11010.png?imageMogr2/auto-orient/strip|imageView2/2/w/1200/format/webp)
+![index](https://upload-images.jianshu.io/upload_images/1500770-138d098cee96326b.png?imageMogr2/auto-orient/strip|imageView2/2/w/1200/format/webp)
+     
+        
 ###未来
+
+
+
