@@ -1,9 +1,9 @@
 """
 Author: Hugo
-Date: 2020-01-07 14:29
+Date: 2020-01-07 21:29
 Desc: 
 """
-
+import time
 from functools import wraps
 
 from starlette.templating import Jinja2Templates
@@ -14,6 +14,9 @@ from utils import config_info
 from utils import hmac_salt
 from utils import exception_custom
 
+from service import audit_record
+
+from model import db
 templates = Jinja2Templates(directory='templates')
 
 SESSION = TTL()
@@ -22,11 +25,12 @@ SALT = config_info("salt")
 
 
 async def startup():
-
+    db.connect()
     print('Ready to do go')
 
 
 async def shutdown():
+    db.close()
     print('Ready to do down')
 
 
@@ -89,6 +93,10 @@ async def login_check(req):
 
     if username == config_info("username") and password == config_info("password"):
 
+        # 审计记录
+        await audit_record(event=f"{username}登陆", event_type="login", level=1, timestamp=time.strftime("%Y-%m-%d %H:%M:%S"))
+
+        # session: key=hash(username), value=hash(user-agent, 客户端的浏览器环境)
         user_agent = "user-agent-default"
         headers = req.scope.get("headers")
         if isinstance(headers, (list,)):
@@ -96,9 +104,7 @@ async def login_check(req):
                 if k == "user-agent":
                     user_agent = v
 
-        # session: key=hash(username), value=hash(user-agent, 客户端的浏览器环境)
         username_hash = hmac_salt(SALT, username)
-        # session_login[username_hash] = hmac_salt(salt, user_agent)
         SESSION.setex(key=username_hash, value=hmac_salt(SALT, user_agent), ttl=EXPIRE)
 
         resp = JSONResponse({"retcode": 0, "stdout": "/"})
