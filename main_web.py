@@ -9,7 +9,7 @@ import uvicorn
 from starlette.applications import Starlette
 from starlette.staticfiles import StaticFiles
 # from starlette.middleware import Middleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware
+# from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from web.urls import routes
 from web.utils import exception_401
@@ -19,7 +19,9 @@ from web.utils import exception_500
 from web.endpoint import startup
 from web.endpoint import shutdown
 
-
+"""
+   这是0.13.0新版才有的功能
+"""
 # middleware = [
 #   Middleware(TrustedHostMiddleware, allowed_hosts=['*']),
 #
@@ -35,9 +37,9 @@ exception_handlers = {
 
 app = Starlette(routes=routes,
                 # middleware=middleware,
-                exception_middleware=exception_handlers,
-                on_startup=[startup],
-                on_shutdown=[shutdown],
+                # exception_handlers=exception_handlers,
+                # on_startup=[startup],
+                # on_shutdown=[shutdown],
                 debug=False)
 
 
