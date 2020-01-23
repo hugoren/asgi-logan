@@ -135,8 +135,17 @@ async def read_own_items(current_user: User = Depends(user_current_active)):
     return [{"item_id": "Foo", "owner": current_user.username}]
 
 
+@app.on_event("startup")
+async def startup_event():
+    print("start up")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("shut down")
+
+
 if __name__ == "__main__":
-    print(password_hash("test"))
     uvicorn.run(app=app,
                 host="0.0.0.0",
                 port=14000,
