@@ -27,6 +27,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(config_info("ACCESS_TOKEN_EXPIRE_MINUTES"))
 
 users_db = json.loads(config_info("users_db"))
 
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
@@ -118,7 +119,7 @@ async def token_apply(form_data: OAuth2PasswordRequestForm = Depends()):
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@app.post("/token/check/")
+@app.get("/token/check/")
 async def token_check(user: User, access_token: str = Header(None)):
     r = token_explain(access_token)
     return r
@@ -135,6 +136,7 @@ async def read_own_items(current_user: User = Depends(user_current_active)):
 
 
 if __name__ == "__main__":
+    print(password_hash("test"))
     uvicorn.run(app=app,
                 host="0.0.0.0",
                 port=14000,
