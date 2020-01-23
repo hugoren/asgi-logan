@@ -5,6 +5,7 @@ Desc:
 """
 
 import click
+from passlib.context import CryptContext
 
 
 @click.group()
@@ -28,6 +29,17 @@ def init_db(db_name):
 @click.option('--table_name', prompt='table name', help='custom table name')
 def init_create(table_name):
     print(table_name)
+
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+@init.command()
+@click.option('--password', prompt='please input password', help='please input password')
+def password_hash(password):
+    pwd_hash = pwd_context.hash(password)
+    print(pwd_hash)
+    return pwd_hash
 
 
 cli = click.CommandCollection(sources=[init])
