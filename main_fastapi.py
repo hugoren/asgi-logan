@@ -3,55 +3,29 @@ Author: Hugo
 Date: 2020-01-17 23:14
 Desc: 
 """
-
-import uvicorn
-from datetime import datetime, timedelta
-
 import jwt
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+import json
+import uvicorn
 from jwt import PyJWTError
 from passlib.context import CryptContext
-from pydantic import BaseModel
+from datetime import datetime, timedelta
 from starlette.status import HTTP_401_UNAUTHORIZED
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
-# to get a string like this run:
-# openssl rand -hex 32
-SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+from typing import Dict
+from fastapi import Header
+from model import (
+    User, UserInDB, TokenData, Token
+)
 
+from utils import config_info
 
-fake_users_db = {
-    "hugo": {
-        "username": "hugo",
-        "full_name": "hugo",
-        "email": "johndoe@example.com",
-        "hashed_password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
-        "disabled": False,
-    }
-}
+SECRET_KEY = config_info("SALT_KEY")
+ALGORITHM = config_info("ALGORITHM")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(config_info("ACCESS_TOKEN_EXPIRE_MINUTES"))
 
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-
-class TokenData(BaseModel):
-    username: str = None
-
-
-class User(BaseModel):
-    username: str
-    email: str = None
-    full_name: str = None
-    disabled: bool = None
-
-
-class UserInDB(User):
-    hashed_password: str
-
+users_db = json.loads(config_info("users_db"))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -60,30 +34,30 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 app = FastAPI()
 
 
-def verify_password(plain_password, hashed_password):
+def password_verify(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def get_password_hash(password):
+def password_hash(password):
     return pwd_context.hash(password)
 
 
-def get_user(db, username: str):
+def user_get(db, username: str):
     if username in db:
         user_dict = db[username]
         return UserInDB(**user_dict)
 
 
-def authenticate_user(fake_db, username: str, password: str):
-    user = get_user(fake_db, username)
+def user_auth(user_db, username: str, password: str):
+    user = user_get(user_db, username)
     if not user:
         return False
-    if not verify_password(password, user.hashed_password):
+    if not password_verify(password, user.hashed_password):
         return False
     return user
 
 
-def create_access_token(*, data: dict, expires_delta: timedelta = None):
+def token_create(*, data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -94,7 +68,15 @@ def create_access_token(*, data: dict, expires_delta: timedelta = None):
     return encoded_jwt
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+def token_explain(data: str) -> Dict:
+    try:
+        r = jwt.decode(data, SECRET_KEY, algorithm=ALGORITHM)
+        return {"retcode": 0, "stdout": r}
+    except Exception as e:
+        return {"retcode": 1, "stderr": f"{e}"}
+
+
+async def user_current(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -108,21 +90,21 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         token_data = TokenData(username=username)
     except PyJWTError:
         raise credentials_exception
-    user = get_user(fake_users_db, username=token_data.username)
+    user = user_get(users_db, username=token_data.username)
     if user is None:
         raise credentials_exception
     return user
 
 
-async def get_current_active_user(current_user: User = Depends(get_current_user)):
+async def user_current_active(current_user: User = Depends(user_current)):
     if current_user.disabled:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
 
-@app.post("/token", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = authenticate_user(fake_users_db, form_data.username, form_data.password)
+@app.post("/token/", response_model=Token)
+async def token_apply(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = user_auth(users_db, form_data.username, form_data.password)
     if not user:
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
@@ -130,21 +112,31 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
+    access_token = token_create(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
 
+@app.post("/token/check/")
+async def token_check(user: User, access_token: str = Header(None)):
+    r = token_explain(access_token)
+    return r
+
+
 @app.get("/users/me/", response_model=User)
-async def read_users_me(current_user: User = Depends(get_current_active_user)):
+async def read_users_me(current_user: User = Depends(user_current_active)):
     return current_user
 
 
 @app.get("/users/me/items/")
-async def read_own_items(current_user: User = Depends(get_current_active_user)):
+async def read_own_items(current_user: User = Depends(user_current_active)):
     return [{"item_id": "Foo", "owner": current_user.username}]
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host='0.0.0.0', port=14000)
+    uvicorn.run(app=app,
+                host="0.0.0.0",
+                port=14000,
+                workers=1
+    )
